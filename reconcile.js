@@ -5,14 +5,33 @@
 
 const fs = require("fs");
 
+// Latest attempt per txn_id wins. Skip lines that don't parse as a JSON
+// object and events without a txn_id. Amounts may be numbers or
+// comma-grouped strings like "4,804.15".
+const latest = new Map();
+const lines = fs.readFileSync("payments.jsonl", "utf8").split("\n").filter((l) => l.trim().length > 0);
+for (const line of lines) {
+  let event;
+  try {
+    event = JSON.parse(line);
+  } catch {
+    continue;
+  }
+  if (!event || typeof event !== "object" || Array.isArray(event) || !event.txn_id) {
+    continue;
+  }
+
+  const prev = latest.get(event.txn_id);
+  if (!prev || Date.parse(event.ts) > Date.parse(prev.ts)) {
+    latest.set(event.txn_id, event);
+  }
+}
+
 let total = 0;
 let count = 0;
-
-const lines = fs.readFileSync("payments.jsonl", "utf8").split("\n").filter((l) => l.length > 0);
-for (const line of lines) {
-  const event = JSON.parse(line);
+for (const event of latest.values()) {
   if (event.status === "success") {
-    total += Number(event.amount);
+    total += Number(String(event.amount).replace(/,/g, ""));
     count += 1;
   }
 }
